@@ -22,40 +22,55 @@ public with sharing class NextStepBatch implements Database.Batchable<sObject>{
 
     public Database.QueryLocator start(Database.BatchableContext bc){
         // Query for all accounts and return the query locator.
-        return null; // Update null with the query locator
+        Database.QueryLocator ql = Database.getQueryLocator([SELECT Id FROM Account]);
+        return ql; // Update null with the query locator
     }
     
     public void execute(Database.BatchableContext bc, List<Account> scope){
         final String BATCH_NEXT_STEP = 'Batching the next meetings together.';
-
+        List<Id> accIds = new List<Id>();
+        List<Account> accsToUpdate = new List<Account>();
+        List<Opportunity> oppsToUpdate = new List<Opportunity>();
         // Update the Next Step field on each record in the batch scope.
+        for (Account acc: scope) {
+            acc.Next_Step__c = BATCH_NEXT_STEP;
+            accsToUpdate.add(acc);
+            accIds.add(acc.Id);
+        }
 
-        // Loop through the scope account records
+        for (Account accRec : [SELECT Id, (SELECT Id, NextStep FROM Opportunities) FROM Account WHERE Id IN: accIds]) {
+            if (accRec.Opportunities.size()>0) {
+                for (Opportunity opp : accRec.Opportunities) {
+                    opp.NextStep = BATCH_NEXT_STEP;
+                    oppsToUpdate.add(opp);
+                }
+            }
+        }
 
-            // Set the Next Step field to 'Batching the next meetings together.'
+        if (!accsToUpdate.isEmpty()) {
+            update accsToUpdate;
+        }
 
-        // Update the account records in this batch scope
-        
-        // Query for all opportunities related to the accounts in this batch scope
-
-        // Loop through the opportunity records
-
-            // Set the Next Step field to 'Batching the next meetings together.'
-
-        // Update the opportunity records
-
+        if (!oppsToUpdate.isEmpty()) {
+            update oppsToUpdate;
+        }
     }
     
-    public void finish(Database.BatchableContext bc){
+    public static void finish(Database.BatchableContext bc){
         final List<User> USERS = [SELECT Id, Name, Email FROM User WHERE IsActive = true AND (NOT Email LIKE 'autoproc%')]; // DO NOT CHANGE
-
-        // Get the email addresses of all active users
-
-            // Pass the set of active user emails to the sendEmailToActiveUsers method
+        Set<String> emailsForSending = new Set<String>();
+            // Get the email addresses of all active users
+            for (User user: USERS) {
+                if (string.isNotBlank(user.Email)) {
+                    emailsForSending.add(user.Email);
+                }
+            }
+        // Pass the set of active user emails to the sendEmailToActiveUsers method
+        NextStepBatch.sendEmailToActiveUsers(emailsForSending);
     }
 
     // Helper method to send an email to all emails in the set
-    private void sendEmailToActiveUsers(Set<String> emails){
+    private static void sendEmailToActiveUsers(Set<String> emails){
         try {
             Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
             mail.setToAddresses(new List<String>(emails));
